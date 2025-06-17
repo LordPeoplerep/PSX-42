@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>PSX - Peoplerep Stock Exchange</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#f0f2f5; padding:20px; }
+  h1 { color:#222; }
+  table { width:100%; border-collapse: collapse; background:#fff; margin-top:20px; }
+  th, td { padding:12px; border:1px solid #ccc; text-align:left; }
+  th { background:#e0e0e0; }
+  .price { font-weight:bold; }
+  .change { font-size:0.9em; }
+  canvas { display:block; margin-top:4px; }
+  #addCompanyPanel { background:#fff; padding:15px; border:1px solid #ccc; margin-top:20px; max-width:400px; }
+  #addCompanyPanel input, #addCompanyPanel button { padding:8px; margin:5px 0; width:100%; box-sizing:border-box; }
+</style>
+</head>
+<body>
+  <h1>Peoplerep Stock Exchange (PSX)</h1>
+  <p>Currency: ₽ (Russian Rubles, English decimals & commas)</p>
+
+  <div id="addCompanyPanel">
+    <h2>Add New Company</h2>
+    <input type="text" id="symbol" placeholder="Symbol (e.g. PRC)" maxlength="5" />
+    <input type="text" id="name" placeholder="Company Name" />
+    <input type="number" id="price" placeholder="Starting Price ₽" min="0.01" step="0.01" />
+    <button id="addCompanyBtn">Add Company</button>
+  </div>
+
+  <table id="stockTable">
+    <thead>
+      <tr><th>Symbol</th><th>Company</th><th>Price (₽)</th><th>Change</th><th>Chart</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+let companies = JSON.parse(localStorage.getItem('psx_companies') || '[]');
+let priceHistory = JSON.parse(localStorage.getItem('psx_priceHistory') || '{}');
+const charts = {};
+
+function format₽(x) {
+  return '₽ ' + x.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+
+function saveState() {
+  localStorage.setItem('psx_companies', JSON.stringify(companies));
+  localStorage.setItem('psx_priceHistory', JSON.stringify(priceHistory));
+}
+
+function addRow(symbol, name) {
+  const hist = priceHistory[symbol] || [0];
+  const tr = document.createElement('tr');
+  tr.id = 'row-' + symbol;
+  tr.innerHTML = `
+    <td>${symbol}</td>
+    <td>${name}</td>
+    <td class="price"></td>
+    <td class="change"></td>
+    <td><canvas id="chart-${symbol}" width="200" height="60"></canvas></td>
+  `;
+  document.querySelector('#stockTable tbody').appendChild(tr);
+  try {
+    const ctx = document.getElementById('chart-' + symbol).getContext('2d');
+    charts[symbol] = new Chart(ctx, {
+      type: 'line',
+      data: { labels: hist.map(() => ''), datasets: [{ data: hist, borderColor: '#007bff', fill: false, tension: 0.3, pointRadius: 0 }]},
+      options: { responsive: false, plugins: { legend:{ display:false } }, scales: { x:{display:false}, y:{display:false} } }
+    });
+  } catch(e) {
+    console.warn('Chart.js not available', e);
+  }
+}
+
+function renderTable() {
+  document.querySelector('#stockTable tbody').innerHTML = '';
+  companies.forEach(c => addRow(c.symbol, c.name));
+}
+
+function updatePrices() {
+  companies.forEach(c => {
+    const sym = c.symbol;
+    let hist = priceHistory[sym];
+    if (!hist) { hist = [c.price]; priceHistory[sym] = hist; }
+    const prev = hist[hist.length - 1];
+    const next = parseFloat((prev * (1 + (Math.random()-0.5)*0.04)).toFixed(2));
+    hist.push(next);
+    if (hist.length > 12) hist.shift();
+    const row = document.getElementById('row-' + sym);
+    row.querySelector('.price').textContent = format₽(next);
+    const changeVal = parseFloat((next - hist[hist.length-2]).toFixed(2));
+    const pct = ((changeVal / hist[hist.length-2]) * 100).toFixed(2);
+    const arrow = changeVal>=0 ? '▲' : '▼';
+    const color = changeVal>=0 ? 'green' : 'red';
+    const chCell = row.querySelector('.change');
+    chCell.textContent = `${arrow} ${format₽(Math.abs(changeVal))} (${pct}%)`;
+    chCell.style.color = color;
+    if (charts[sym]) {
+      charts[sym].data.datasets[0].data = hist;
+      charts[sym].update();
+    }
+  });
+  saveState();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('addCompanyBtn').addEventListener('click', () => {
+    const sym = document.getElementById('symbol').value.trim().toUpperCase();
+    const name = document.getElementById('name').value.trim();
+    const price = parseFloat(document.getElementById('price').value);
+    if (!sym || !name || !price || price <= 0) return alert('Enter valid symbol,name,price.');
+    if (companies.some(c=>c.symbol===sym)) return alert('Symbol exists.');
+    companies.push({symbol: sym, name: name, price: price});
+    priceHistory[sym] = [price];
+    saveState();
+    addRow(sym, name);
+    document.getElementById('symbol').value='';
+    document.getElementById('name').value='';
+    document.getElementById('price').value='';
+  });
+  renderTable();
+  updatePrices();
+  setInterval(updatePrices, 3600000);
+});
+</script>
+</body>
+</html>
